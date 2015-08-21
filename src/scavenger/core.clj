@@ -1,4 +1,5 @@
 (ns scavenger.core
+  (:gen-class)
   (:require
     [compojure.core :as compojure :refer [GET]]
     [ring.middleware.params :as params]
@@ -29,25 +30,27 @@
             (recur (conj lines line))
             (do (>! ch lines)
                 (close! ch)))))
-      (println "No more urls!"))))
+      (println "[read-lines] No more urls!"))))
 
 (defn get-responses
   "Given a coll of urls, will load the http responses"
-  [urls-chan responses-chan])
+  [urls-chan responses-chan]
+  (go-loop []
+    (when-let [urls-batch (<! urls-chan)]
+      (println "[get-responses] Fetched" (count urls-batch) "urls...")
+      (if (seq urls-batch)
+        (recur)
+        (close! responses-chan)))))
 
-(defn run
-  []
+(defn -main
+  [& args]
   (let [batch-size 12
         urls-chan (chan 5)
         responses-chan (chan)
         reader (read-lines urls-chan batch-size "data/sample.txt")
         responses (get-responses urls-chan responses-chan)]
-    (go-loop []
-      (when-let [urls-batch (<! urls-chan)]
-        (println "Fetched" (count urls-batch) "urls...")
-        (if (<= batch-size (count urls-batch))
-          (recur)
-          (shutdown-agents))))))
+    (Thread/sleep 100)
+    (shutdown-agents)))
 
 
 ;(mapv http/get)

@@ -17,18 +17,22 @@
     (let [response @(d/chain deferred)]
       {:response response
        :body (slurp (:body response))})
-    (catch Exception e)))
+    (catch Exception e
+      {:exception true})))
 
 (defn read-lines [ch batch-size file]
   (go
     (with-open [rdr (clojure.java.io/reader file)]
       (loop [lines []]
         (if (<= batch-size (count lines))
-          (do (>! ch lines)
+          (do (println (str "[read-lines] >! " (count lines)))
+              (>! ch lines)
               (recur []))
           (if-let [line (.readLine rdr)]
             (recur (conj lines line))
-            (do (>! ch lines)
+            (do (println (str "[read-lines] >! " (count lines)))
+                (>! ch lines)
+                (println "[read-lines] close!")
                 (close! ch)))))
       (println "[read-lines] No more urls!"))))
 
@@ -36,23 +40,39 @@
   "Given a coll of urls, will load the http responses"
   [urls-chan responses-chan]
   (go-loop []
-    (when-let [urls-batch (<! urls-chan)]
-      (println "[get-responses] Fetched" (count urls-batch) "urls...")
-      (if (seq urls-batch)
+    (let [urls-batch (<! urls-chan)]
+      (if (not urls-batch)
+        (do
+          (println "[get-responses] close!")
+          (close! responses-chan))
+        (do
+          (println (str "[get-responses] <! " (count urls-batch)))
+          (let [handles (mapv #(http/get (str "http://" %) {:connection-timeout 1000
+                                                            :request-timeout 1000}) urls-batch)
+                responses (mapv make-response handles)]
+            (println (str "[get-responses] >! " (count responses)))
+            (>! responses-chan responses))
+            (recur))))))
+
+(defn- reporter
+  "Reports data on the given channel"
+  [ch]
+  (go-loop []
+    (let [data (<! ch)]
+      (println (str "[reporter] <! " (count data)))
+      (if (seq data)
         (recur)
-        (close! responses-chan)))))
+        (do
+          (println "[reporter] End!")
+          (shutdown-agents))))))
 
 (defn -main
   [& args]
-  (let [batch-size 12
+  (let [batch-size 100
         urls-chan (chan 5)
-        responses-chan (chan)
-        reader (read-lines urls-chan batch-size "data/sample.txt")
+        responses-chan (chan 5)
+        file-name "data/alexa1M.txt" ; "data/sample.txt"
+        reader (read-lines urls-chan batch-size file-name)
         responses (get-responses urls-chan responses-chan)]
-    (Thread/sleep 100)
-    (shutdown-agents)))
-
-
-;(mapv http/get)
-;(mapv make-response)
-;(println)))))
+    (<!! (reporter responses-chan))
+    #_(shutdown-agents)))

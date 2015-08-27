@@ -24,14 +24,13 @@
 (defn read-lines [ch batch-size file]
   (go
     (with-open [rdr (clojure.java.io/reader file)]
-      (loop [lines []]
+      (loop []
         (if-let [line (.readLine rdr)]
-          (do (println (str "[read-lines] >!"))
+          (do (print \.)
               (>! ch line)
-              (recur []))
-          (do (println "[read-lines] close!")
-              (close! ch)))))
-      (println "[read-lines] No more urls!")))
+              (recur))
+          (do (print \x)
+              (close! ch)))))))
 
 (defn get-responses
   "Given a coll of urls, will load the http responses"
@@ -41,16 +40,22 @@
           urls-batch [url]]
       (if (not url)
         (do
-          (println "[get-responses] close!")
+          (print \x)
           (close! responses-chan))
         (do
-          (println (str "[get-responses] <! "))
-          (let [handles (mapv #(http/get (str "http://" %) {:connection-timeout 500
-                                                            :request-timeout 500}) urls-batch)
-                responses (time (mapv make-response handles))]
-            (println (str "[get-responses] >! "))
-            (>! responses-chan responses))
-            (recur))))))
+          (println "HERE")
+          (try
+            (let [async-stream (http/get (str "http://" url) {:connection-timeout 5000
+                                                                :request-timeout 5000})
+                  c (chan)
+                  _ (s/connect async-stream c)
+                  responses (<! c)]
+              (print \:)
+              (>! responses-chan responses))
+            (catch Exception e
+              (println "HERE I AM")
+              (print \E))))))
+    (recur)))
 
 (defn- reporter
   "Reports data on the given channel"

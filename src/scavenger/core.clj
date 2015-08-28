@@ -11,6 +11,12 @@
     [clojure.core.async :as async :refer :all 
      :exclude [map into reduce merge partition partition-by take]]))
 
+(defn- log
+  "Logs status"
+  [data status]
+  (print data)
+  (flush))
+
 (defn- make-response
   [deferred]
   (try
@@ -21,16 +27,31 @@
       #_(println (.getMessage e))
       {:exception true})))
 
-(defn read-lines [ch batch-size file]
+(defn read-lines [ch file]
   (go
     (with-open [rdr (clojure.java.io/reader file)]
       (loop []
         (if-let [line (.readLine rdr)]
-          (do (print \.)
+          (do (log \. :success)
               (>! ch line)
               (recur))
-          (do (print \x)
+          (do (log \x :close-channel)
               (close! ch)))))))
+
+(defn- fetch-response
+  "Fetches the response"
+  [url]
+  (try
+    (let [async-stream (http/get (str "http://" url) {:connection-timeout 5000
+                                                      :request-timeout 5000})
+          c (chan)]
+      #_(s/connect async-stream c)
+      (d/on-realized async-stream
+                         (fn [x] (if x (>!! c x) (close! c)))
+                             (fn [x] (close! c)))
+      c)
+    (catch Exception e
+      (log \E :exception))))
 
 (defn get-responses
   "Given a coll of urls, will load the http responses"
@@ -40,21 +61,13 @@
           urls-batch [url]]
       (if (not url)
         (do
-          (print \x)
+          (log \x :close-channel)
           (close! responses-chan))
         (do
-          (println "HERE")
-          (try
-            (let [async-stream (http/get (str "http://" url) {:connection-timeout 5000
-                                                                :request-timeout 5000})
-                  c (chan)
-                  _ (s/connect async-stream c)
-                  responses (<! c)]
-              (print \:)
-              (>! responses-chan responses))
-            (catch Exception e
-              (println "HERE I AM")
-              (print \E))))))
+          (if-let [c (fetch-response url)]
+            (when-let [response (<! c)]
+              (log \: :success)
+              (>! responses-chan response))))))
     (recur)))
 
 (defn- reporter
@@ -70,11 +83,11 @@
 
 (defn -main
   [& args]
-  (let [batch-size 10
-        urls-chan (chan 1)
-        responses-chan (chan 1)
+  (let [responses-workers 10
+        reports-workers 10
+        urls-chan (chan responses-workers)
+        responses-chan (chan reports-workers)
         file-name "data/sample.txt"
-        reader (read-lines urls-chan batch-size file-name)
-        responses (get-responses urls-chan responses-chan)]
-    (<!! (reporter responses-chan))
-    #_(shutdown-agents)))
+        reader (read-lines urls-chan file-name)
+        responses (dotimes [n responses-workers] (get-responses urls-chan responses-chan))]
+    (<!! (reporter responses-chan))))

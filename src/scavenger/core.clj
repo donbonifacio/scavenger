@@ -72,22 +72,25 @@
 
 (defn- reporter
   "Reports data on the given channel"
-  [ch]
+  [ch finished]
   (go-loop []
     (let [data (<! ch)]
-      (if (seq data)
+      (if data
         (recur)
         (do
-          (println "[reporter] End!")
+          (log \~ :finished)
+          (>! finished true)
           (shutdown-agents))))))
 
 (defn -main
   [& args]
-  (let [responses-workers 10
-        reports-workers 10
+  (let [responses-workers 100
+        reports-workers 1
         urls-chan (chan responses-workers)
         responses-chan (chan reports-workers)
-        file-name "data/sample.txt"
-        reader (read-lines urls-chan file-name)
-        responses (dotimes [n responses-workers] (get-responses urls-chan responses-chan))]
-    (<!! (reporter responses-chan))))
+        finished-chan (chan)
+        file-name "data/sample.txt"]
+    (read-lines urls-chan file-name)
+    (dotimes [n responses-workers] (get-responses urls-chan responses-chan))
+    (dotimes [n reports-workers] (reporter responses-chan finished-chan))
+    (<!! finished-chan)))

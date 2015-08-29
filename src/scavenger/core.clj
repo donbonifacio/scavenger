@@ -67,8 +67,9 @@
           (if-let [c (fetch-response url)]
             (when-let [response (<! c)]
               (log \: :success)
-              (>! responses-chan response))))))
-    (recur)))
+              (>! responses-chan response)))
+          (recur))))
+    ))
 
 (defn- reporter
   "Reports data on the given channel"
@@ -79,18 +80,19 @@
         (recur)
         (do
           (log \~ :finished)
-          (>! finished true)
-          (shutdown-agents))))))
+          (>! finished true))))))
 
 (defn -main
   [& args]
-  (let [responses-workers 100
+  (let [responses-workers 10
         reports-workers 1
         urls-chan (chan responses-workers)
         responses-chan (chan reports-workers)
-        finished-chan (chan)
+        finished-chan (chan 1000)
         file-name "data/sample.txt"]
     (read-lines urls-chan file-name)
     (dotimes [n responses-workers] (get-responses urls-chan responses-chan))
     (dotimes [n reports-workers] (reporter responses-chan finished-chan))
-    (<!! finished-chan)))
+    (<!! finished-chan)
+    (println "Shuting down...")
+    (shutdown-agents)))

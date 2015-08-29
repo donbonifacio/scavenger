@@ -45,10 +45,9 @@
     (let [async-stream (http/get (str "http://" url) {:connection-timeout 5000
                                                       :request-timeout 5000})
           c (chan)]
-      #_(s/connect async-stream c)
       (d/on-realized async-stream
-                         (fn [x] (if x (>!! c x) (close! c)))
-                             (fn [x] (close! c)))
+                         (fn [x] (if x (>!! c x) (close! c)) (log \: :success))
+                             (fn [x] (close! c) (log \E :error)))
       c)
     (catch Exception e
       (log \E :exception))))
@@ -66,10 +65,8 @@
         (do
           (if-let [c (fetch-response url)]
             (when-let [response (<! c)]
-              (log \: :success)
               (>! responses-chan response)))
-          (recur))))
-    ))
+          (recur))))))
 
 (defn- reporter
   "Reports data on the given channel"
@@ -84,12 +81,14 @@
 
 (defn -main
   [& args]
-  (let [responses-workers 10
+  (let [responses-workers 100
         reports-workers 1
+        file-name "data/sample.txt"
+        ;file-name "data/alexa1M.txt"
         urls-chan (chan responses-workers)
         responses-chan (chan reports-workers)
-        finished-chan (chan 1000)
-        file-name "data/sample.txt"]
+        finished-chan (chan 1000)]
+     
     (read-lines urls-chan file-name)
     (dotimes [n responses-workers] (get-responses urls-chan responses-chan))
     (dotimes [n reports-workers] (reporter responses-chan finished-chan))

@@ -81,14 +81,14 @@
 
 (defn -main
   [& args]
-  (let [responses-workers 100
+  (let [responses-workers 1000
         reports-workers 1
-        file-name "data/sample.txt"
-        ;file-name "data/alexa1M.txt"
+        ;file-name "data/sample.txt"
+        file-name "data/alexa1M.txt"
         urls-chan (chan responses-workers)
         responses-chan (chan reports-workers)
         finished-chan (chan 1000)]
-     
+
     (read-lines urls-chan file-name)
     (dotimes [n responses-workers] (get-responses urls-chan responses-chan))
     (dotimes [n reports-workers] (reporter responses-chan finished-chan))
